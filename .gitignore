@@ -5,12 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-*.pyd
 *.o*
-core/libs/pyslvs/*.c
-core/libs/pyslvs/*.h
-core/libs/python_solvespace/slvs.py
-core/libs/python_solvespace/obj*
 *.cxx
 *.def
 *.lib
@@ -110,13 +105,6 @@ out/
 
 # mypy
 .mypy_cache/
-
-# logging
-*.log
-
-# Eric cache
-.eric6project/
-_eric6project/
 
 #PyCharm cache
 .idea/

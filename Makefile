@@ -1,111 +1,123 @@
 # Pyslvs Makefile
-
 # author: Yuan Chang
-# copyright: Copyright (C) 2016-2018
+# copyright: Copyright (C) 2016-2020
 # license: AGPL
 # email: pyslvs@gmail.com
 
-LAUNCHSCRIPT = launch_pyslvs
+LAUNCHER = launch_pyslvs.py
+PYSLVS_PATH = pyslvs
 
-ifeq ($(OS),Windows_NT)
-    PYVER = $(shell python -c "import sys; print('{v[0]}{v[1]}'.format(v=list(sys.version_info[:2])))")
-    PYSLVSVER = $(shell python -c "from core.info import __version__; print(\"{}.{:02}.{}\".format(*__version__))")
-    COMPILERVER = $(shell python -c "import platform; print(''.join(platform.python_compiler().split(\" \")[:2]).replace('.', '').lower())")
-    SYSVER = $(shell python -c "import platform; print(platform.machine().lower())")
+ifeq ($(OS), Windows_NT)
+    PY = python
+    SHELL = cmd
+    NULL = NUL
 else
-    PYVER = $(shell python3 -c "import sys; print('{v[0]}{v[1]}'.format(v=list(sys.version_info[:2])))")
-    PYSLVSVER = $(shell python3 -c "from core.info import __version__; print(\"{}.{:02}.{}\".format(*__version__))")
-    COMPILERVER = $(shell python3 -c "import platform; print(''.join(platform.python_compiler().split(\" \")[:2]).replace('.', '').lower())")
-    SYSVER = $(shell python3 -c "import platform; print(platform.machine().lower())")
+    PY = python3
+    NULL = /dev/null
 endif
-EXENAME = pyslvs-$(PYSLVSVER).$(COMPILERVER)-$(SYSVER)
+PIP = $(PY) -m pip
 
-all: test
+.PHONY: all help doc install uninstall \
+    pack build test-pack test clean-pack clean clean-all
+
+all: build
 
 help:
-	@echo ---Pyslvs Makefile Help---
+	@echo Pyslvs Makefile Help
+	@echo
 	@echo make target:
-	@echo - help: show this help message.
-	@echo - all: build Pyslvs and test binary.
-	@echo - build: build Pyslvs executable file.
-	@echo - build-kernel: build kernel only.
-	@echo - build-pyslvs: build pyslvs kernel only.
-	@echo - build-solvespace: build solvespace kernel only.
-	@echo - clean: clean up executable file and PyInstaller items,
+	@echo   all: build kernel only.
+	@echo   help: show this help message.
+	@echo   doc: build the API documents.
+	@echo   build-pack: build Pyslvs executable file.
+	@echo   build: build kernel only.
+	@echo   install: install Pyslvs by setuptools.
+	@echo   uninstall: uninstall Pyslvs by pip.
+	@echo   clean-pack: clean up executable file and PyInstaller items,
 	@echo          but not to delete kernel binary files.
-	@echo - clean-kernel: clean up kernel binary files.
-	@echo - clean-pyslvs: clean up kernel binary files of pyslvs.
-	@echo - clean-solvespace: clean up kernel binary files of solvespace.
-	@echo - clean-all: clean every binary files and executable file.
-	@echo --------------------------
+	@echo   clean: clean up kernel binary files.
+	@echo   clean-all: clean every binary files and executable file.
 
-.PHONY: help \
-    build build-kernel build-pyslvs build-solvespace \
-    clean clean-kernel clean-pyslvs clean-solvespace clean-all
-
-build-pyslvs:
-	@echo ---Pyslvs libraries Build---
-	$(MAKE) -C core/libs/pyslvs build
-	@echo ---Done---
-
-build-solvespace:
-	@echo ---Python solvespace Build---
-	$(MAKE) -C core/libs/python_solvespace
-	@echo ---Done---
-
-build-kernel: build-pyslvs build-solvespace
-
-build: $(LAUNCHSCRIPT).py build-kernel
-	@echo ---Pyslvs Build---
-	@echo ---$(OS) Version---
-ifeq ($(OS),Windows_NT)
-	@echo --Python Version $(PYVER)--
-	pyinstaller -F $< -i ./icons/main.ico -n Pyslvs \
---add-binary="core/libs/python_solvespace/libslvs.so;."
-	rename .\dist\Pyslvs.exe $(EXENAME).exe
-else ifeq ($(shell uname),Darwin)
-	@echo --Python Version $(PYVER)--
-	pyinstaller -w -F $< -i ./icons/main.icns -n Pyslvs
-	mv dist/Pyslvs dist/$(EXENAME)
-	chmod +x dist/$(EXENAME)
-	mv dist/Pyslvs.app dist/$(EXENAME).app
-	zip -r dist/$(EXENAME).app.zip dist/$(EXENAME).app
-else
-	@echo --Python Version $(PYVER)--
-	bash ./appimage_recipe.sh
+doc:
+ifeq (, $(shell which apimd > $(NULL)))
+	$(PIP) install apimd
 endif
-	@echo ---Done---
+	apimd Pyslvs=pyslvs Python-Solvespace=python_solvespace
 
-test: build
-ifeq ($(OS),Windows_NT)
-	./dist/$(EXENAME) --test
-else ifeq ($(shell uname),Darwin)
-	./dist/$(EXENAME) --test
+build:
+	@echo Build libraries
+	-$(PIP) uninstall pyslvs -y
+	cd $(PYSLVS_PATH) && $(PY) setup.py install
+	@echo Done
+
+pack: $(LAUNCHER) clean build
+	@echo Build executable for Python \
+$(shell $(PY) -c "import platform; print(platform.python_version())")
+ifeq ($(OS), Windows_NT)
+	bash platform/pyinstaller_recipe.sh
+else ifeq ($(shell uname), Darwin)
+	bash platform/pyinstaller_recipe.sh
 else
-	$(eval APPIMAGE = $(shell ls -1 out))
-	./out/$(APPIMAGE) --test
+	bash platform/appimage_recipe.sh
+endif
+	@echo Done
+
+install: build
+	$(PY) setup.py install
+
+uninstall:
+	$(PIP) uninstall pyslvs-ui pyslvs python-solvespace
+
+test:
+	@echo Test libraries
+	cd $(PYSLVS_PATH) && $(PY) setup.py test
+	@echo Done
+
+test-pack: pack
+ifeq ($(OS), Windows_NT)
+	$(wildcard dist/*.exe) --test
+else ifeq ($(shell uname), Darwin)
+	$(wildcard dist/*.run) --test
+else
+	$(wildcard out/*.AppImage) --test
 endif
 
 clean:
-ifeq ($(OS),Windows_NT)
-	-rd build /s /q
-	-rd dist /s /q
-	-del *.spec
-else ifeq ($(shell uname),Darwin)
-	-rm -f -r build
-	-rm -f -r dist
-	-rm -f *.spec
+	-$(PIP) uninstall pyslvs -y
+	cd $(PYSLVS_PATH) && $(PY) setup.py clean --all
+ifeq ($(OS), Windows_NT)
+	-rd "$(PYSLVS_PATH)/dist" /s /q
+	-rd "$(PYSLVS_PATH)/pyslvs.egg-info" /s /q
+	-cd "$(PYSLVS_PATH)/pyslvs" && del *.cpp /q
+	-cd "$(PYSLVS_PATH)/pyslvs" && del *.pyd /q
+	-cd "$(PYSLVS_PATH)/pyslvs" && del metaheuristics\*.cpp /q
+	-cd "$(PYSLVS_PATH)/pyslvs" && del metaheuristics\*.pyd /q
 else
-	-rm -f -r ENV
-	-rm -f -r out
+	-rm -fr $(PYSLVS_PATH)/dist
+	-rm -fr $(PYSLVS_PATH)/pyslvs.egg-info
+	-rm -f $(PYSLVS_PATH)/pyslvs/*.cpp
+	-rm -f $(PYSLVS_PATH)/pyslvs/*.so
+	-rm -f $(PYSLVS_PATH)/pyslvs/metaheuristics/*.cpp
+	-rm -f $(PYSLVS_PATH)/pyslvs/metaheuristics/*.so
 endif
 
-clean-pyslvs:
-	$(MAKE) -C core/libs/pyslvs clean
+clean-pack:
+ifeq ($(OS), Windows_NT)
+	-rd build /s /q
+	-rd dist /s /q
+	-rd pyslvs_ui.egg-info /s /q
+	-rd ENV /s /q
+	-del *.spec /q
+else
+	-rm -f -r build
+	-rm -f -r dist
+	-rm -f -r pyslvs_ui.egg-info
+	-rm -f -r ENV
+ifeq ($(shell uname), Darwin)
+	-rm -f *.spec
+else
+	-rm -f -r out
+endif
+endif
 
-clean-solvespace:
-	$(MAKE) -C core/libs/python_solvespace clean
-
-clean-kernel: clean-pyslvs clean-solvespace
-
-clean-all: clean clean-kernel
+clean-all: clean-pack clean
